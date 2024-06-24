@@ -2,29 +2,13 @@
 #include <SPI.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
 #include <led_pulse_train.h>
 #include <Adafruit_NeoPixel.h>
-#include <gfx_bitmaps.h>
 #include <serialPrint.h>
 #include <neopixel_effects.h>
 
-#define SCREEN_WIDTH 128 // OLED display width, in pixels
-#define SCREEN_HEIGHT 64 // OLED display height, in pixels
-
-#define OLED_RESET      -1 // Reset pin # (or -1 if sharing Arduino reset pin)
-#define SCREEN_ADDRESS  0x3C ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
-//#define SCREEN_ADDRESS 0x3D ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
-
-#define NUMFLAKES       10 // Number of snowflakes in the animation example
 #define NPXL_PIN        2
 #define NUM_NEOPIXELS        16
-
-#define LOGO_HEIGHT     16
-#define LOGO_WIDTH      16
-#define LOGO_X_MIN      -8
-#define LOGO_X_MAX      120
 
 #define LED_ON_TIME     50
 #define LED_OFF_TIME    750
@@ -35,7 +19,6 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 
 #define SER_WAIT_TICKS  10
-#define COMPASS_Y       0
 
 #define SETUP_DELAY     1000
 #define NUM_BYTES       32
@@ -49,8 +32,6 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 #define DEF_NPX_AMP     31
 
 #define QUARTER_PI float(PI / 4.0)
-// #define RAD_TO_DEG float(180/PI)
-// #define DEG_TO_RAD float(PI/80)
 
 
 
@@ -68,7 +49,6 @@ uint8_t npxl_rotation_dir = true;
 int def_count = 0;
 int dir_up_count = 0;
 int dir_dn_count = 0;
-int azim = 0;
 int rangeR = 32;
 int rangeG = 32;
 int rangeB = 32;
@@ -162,28 +142,8 @@ void setup() {
   x = -LOGO_WIDTH / 2;
   Serial.println(F("Serial OK"));
 
-  Serial.println("Starting....");
-  if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
-    Serial.println(F("SSD1306 allocation failed"));
-    for (;;);
-    }
-  else
-    Serial.println(F("SSD1306 allocation OK!"));
-
-
-  // Show initial display buffer contents on the screen --
-  // the library initializes this with an Adafruit splash screen.
-  ledPulseTrain(1);
-  Serial.println(F("render bmp00"));
-  display.clearDisplay();
-  display.drawBitmap(64, 16, logo_bmp, LOGO_WIDTH, LOGO_HEIGHT, SSD1306_WHITE);
-  display.display();
-  delay(SETUP_DELAY);
-
 
   ledPulseTrain(5);
-  display.clearDisplay();
-  display.display();
   delay(SETUP_DELAY);
 
   }
@@ -199,10 +159,7 @@ void taskSerOut() {
     tmpInt = (r + g + b)/3;
     _tmpStr = "--iC:";
     _tmpStr += iCount;
-    // _tmpStr += " azim:";
-    // _tmpStr += azim;
-    // _tmpStr += " x:";
-    // _tmpStr += x;
+
     _tmpStr += " npxlMode:";
     _tmpStr += npxlMode;
 
@@ -371,61 +328,6 @@ void taskHandleSerIn() {
 }
 
 //=================================================================================================
-void renderOledE_compass() {
-  // static int dir = 0;
-  // static int x0 = 0;
-
-  // static int lLim = -LOGO_WIDTH/2;
-  // static int rLim = display.width() - (LOGO_WIDTH/2);
-
-
-  switch (dir) {
-
-      case 1:
-        display.fillRect(x, COMPASS_Y, LOGO_WIDTH, LOGO_HEIGHT, SSD1306_BLACK);
-        azim++;
-        x = azim_to_x();
-        display.drawBitmap(x, COMPASS_Y, diamond, LOGO_WIDTH, LOGO_HEIGHT, SSD1306_WHITE);
-        dir_up_count++;
-        break;
-
-      case -1:
-        display.fillRect(x, COMPASS_Y, LOGO_WIDTH, LOGO_HEIGHT, SSD1306_BLACK);
-        azim--;
-        x = azim_to_x();
-        display.drawBitmap(x, COMPASS_Y, diamond, LOGO_WIDTH, LOGO_HEIGHT, SSD1306_WHITE);
-        dir_dn_count++;
-        break;
-
-      default:
-      case 0:
-        // display.drawBitmap(x, COMPASS_Y, diamond, LOGO_WIDTH, LOGO_HEIGHT, SSD1306_WHITE);
-        def_count++;
-        break;
-    }
-
-
-
-  if (azim > 359) {
-    azim = 359;
-    dir = -1;
-    }
-
-  if (azim < 0) {
-    azim = 0;
-    x = azim_to_x();;
-    dir = 1;
-    }
-
-
-  }
-
-//=================================================================================================
-void taskOledOut() {
-  renderOledE_compass();
-  }
-
-//=================================================================================================
 void taskNpxl_red_breath() {
   uint8_t rTmp;
   uint8_t gTmp;
@@ -479,10 +381,8 @@ void loop() {
   if(iCount % 1 == 0)
     taskNpxl_red_breath();
 
-  taskOledOut();
   taskSerOut();
 
-  display.display();
 
   iCount++;
   delay(10);
