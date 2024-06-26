@@ -1,5 +1,6 @@
 {
     "configuration": "usb=serial,speed=96,opt=o2std,keys=en-us",
     "board": "teensy:avr:teensy31",
-    "port": "COM11"
+    "port": "COM11",
+    "output": "./build"
 }
