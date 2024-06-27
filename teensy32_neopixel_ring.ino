@@ -10,34 +10,43 @@
 #include <neopixel_effects.h>
 #include <npx_ring_event.h>
 
-#define EEPROM_SIZE     512
+#define EEPROM_SIZE             512
+#define EEPROM_DELAY            5
 
-#define NPXL_PIN        2
-#define NUM_NEOPIXELS   16
+#define NPXL_PIN                2
+#define NUM_NEOPIXELS           16
 
-#define LED_ON_TIME     50
-#define LED_OFF_TIME    750
+#define LED_ON_TIME             50
+#define LED_OFF_TIME            750
 
-#define DIR_DOWN        -1
-#define DIR_NONE        0
-#define DIR_UP          1
+#define DIR_DOWN                -1
+#define DIR_NONE                0
+#define DIR_UP                  1
 
+#define LOOP_DELAY              5
 
-#define SER_WAIT_TICKS  10
+#define SER_WAIT_TICKS          30
+#define SER_WAIT_DELAY          250
 
-#define SETUP_DELAY     1000
-#define NUM_BYTES       32
+#define SETUP_DELAY             1000
+#define NUM_BYTES               32
 
 
 #define NPX_ROT_DIR_STOP        0
 #define NPX_ROT_DIR_CCW         1
 #define NPX_ROT_DIR_CW          2
 
-#define DEF_NPX_INC     1
-#define DEF_NPX_AMP_MIN 0
-#define DEF_NPX_AMP_MAX 31
+#define NPX_INC_MAX             64
+#define NPX_AMP_MAX             255
+#define NPX_AMP_MID             127
+#define NPX_CALL_DELAY_CYCLES   15
+#define NPX_CALL_INTV           8
 
-#define QUARTER_PI float(PI / 4.0)
+#define DEF_NPX_INC             1
+#define DEF_NPX_AMP_MIN         0
+#define DEF_NPX_AMP_MAX         31
+
+#define QUARTER_PI              float(PI / 4.0)
 // #define RAD_TO_DEG float(180/PI)
 // #define DEG_TO_RAD float(PI/80)
 
@@ -93,6 +102,16 @@ enum eeprom_registers {
   NUM_EEPROM_REG,
   };
 
+enum setCaryModes {
+  SCM_OFF,
+  SCM_ON,
+  SCM_RED,
+  SCM_GREEN,
+  SCM_BLUE,
+  NUM_SET_CARY_MODES,
+};
+
+
 uint8_t eeprom[EEPROM_SIZE] = {};
 
 uint8_t eeprom_live[EEPROM_SIZE] = {};
@@ -109,14 +128,13 @@ uint8_t npxl_rotation_dir = true;
 int def_count = 0;
 int dir_up_count = 0;
 int dir_dn_count = 0;
-int azim = 0;
+int amp_sel = 0;
 
 
 colorVector c00 = { 0,0,0 };
 
-uint8_t r = 0;
-uint8_t b = 0;
-uint8_t g = 0;
+colorVector cary[16];
+
 float rRads = 0;
 
 String inStr = "";
@@ -126,7 +144,7 @@ int64_t iCount = 0;
 Adafruit_NeoPixel strip(NUM_NEOPIXELS, NPXL_PIN, NEO_GRB + NEO_KHZ800);
 bool nxplEn = true;
 
-bool btnState = false;
+bool btnOState = false;
 bool btnStateR = false;
 bool btnStateG = false;
 bool btnStateB = false;
@@ -234,7 +252,7 @@ void writeEEPROM() {
   for (int i = 0; i < NUM_EEPROM_REG; i++) {
 
     byte_write_cnt += writeEepromReg(i);
-    delay(5);
+    delay(EEPROM_DELAY);
     }
 
   if (byte_write_cnt > 0) {
@@ -273,6 +291,56 @@ int writeEepromReg(uint16_t nIdx) {
     }
   }
 
+//=================================================================================================
+void setCAry(uint8_t nMode) {
+  uint8_t _r;
+  uint8_t _g;
+  uint8_t _b;
+
+
+
+  switch (nMode) {
+    default:
+    case SCM_OFF:
+      _r = 0;
+      _g = 0;
+      _b = 0;
+
+      break;
+
+    case SCM_ON:
+      _r = 255;
+      _g = 255;
+      _b = 255;
+      break;
+
+    case SCM_RED:
+      _r = 255;
+      _g = 0;
+      _b = 0;
+      break;
+
+    case SCM_GREEN:
+      _r = 0;
+      _g = 255;
+      _b = 0;
+      break;
+
+    case SCM_BLUE:
+      _r = 0;
+      _g = 0;
+      _b = 255;
+      break;
+
+  }
+
+
+  for(int i = 0; i < 255; i++){
+    cary[i].r = _r;
+    cary[i].g = _g;
+    cary[i].b = _b;
+    }
+}
 
 //=================================================================================================
 void setup() {
@@ -281,10 +349,10 @@ void setup() {
 
   Serial.begin(9600);
   ledPulseTrain(3);
-  while (!Serial && ser_wait_cnt < 10) {
+  while (!Serial && ser_wait_cnt < SER_WAIT_TICKS) {
     ser_wait_cnt++;
     ledToggle();
-    delay(250);
+    delay(SER_WAIT_DELAY);
     }
   serPrntNL("Serial OK");
 
@@ -309,11 +377,11 @@ void setup() {
 
   ledPulseTrain(4);
 
-  nre0 = npx_ring_event(&btnState, 0, 0, 0);
-  nreR = npx_ring_event(&btnStateR, 255, 0, 0);
-  nreG = npx_ring_event(&btnStateG, 0, 255, 0);
-  nreB = npx_ring_event(&btnStateB, 0, 0, 255);
-  nreRG = npx_ring_event(&btnStateRG, 255, 255, 0);
+  nre0 = npx_ring_event(&btnOState, 0, 0, 0);
+  nreR = npx_ring_event(&btnStateR, NPX_AMP_MAX, 0, 0);
+  nreG = npx_ring_event(&btnStateG, 0, NPX_AMP_MAX, 0);
+  nreB = npx_ring_event(&btnStateB, 0, 0, NPX_AMP_MAX);
+  nreRG = npx_ring_event(&btnStateRG, NPX_AMP_MAX, NPX_AMP_MAX, 0);
 
 
   ledPulseTrain(6);
@@ -327,75 +395,56 @@ void setup() {
 //=================================================================================================
 void taskSerOut() {
   String _tmpStr = "";
-  uint8_t tmpInt = 0;
+
+  _tmpStr = "--iC:";
+  _tmpStr += iCount;
+
+  _tmpStr += " npxlMd:";
+  _tmpStr += npxlMode;
 
 
-  if (iCount % 10 == 0) {
-
-    tmpInt = (c00.r + c00.g + c00.b);
-    _tmpStr = "--iC:";
-    _tmpStr += iCount;
-    // _tmpStr += " azim:";
-    // _tmpStr += azim;
-    // _tmpStr += " x:";
-    // _tmpStr += x;
-    _tmpStr += " npxlMode:";
-    _tmpStr += npxlMode;
+  _tmpStr += " rR:";
+  _tmpStr += eeprom_live[EE_REG_R_MAX];
+  _tmpStr += " rG:";
+  _tmpStr += eeprom_live[EE_REG_G_MAX];
+  _tmpStr += " rB:";
+  _tmpStr += eeprom_live[EE_REG_B_MAX];
 
 
-    _tmpStr += " rR:";
-    _tmpStr += eeprom_live[EE_REG_R_MAX];
-    _tmpStr += " rG:";
-    _tmpStr += eeprom_live[EE_REG_G_MAX];
-    _tmpStr += " rB:";
-    _tmpStr += eeprom_live[EE_REG_B_MAX];
+  _tmpStr += " incR:";
+  _tmpStr += eeprom_live[EE_REG_R_INT];
+  _tmpStr += "  incG:";
+  _tmpStr += eeprom_live[EE_REG_G_INT];
+  _tmpStr += " incB:";
+  _tmpStr += eeprom_live[EE_REG_B_INT];
+
+  // _tmpStr += " btnO";
+  // _tmpStr += btnOState;
+
+  // _tmpStr += " btnR";
+  // _tmpStr += btnStateR;
+
+  // _tmpStr += " btnG";
+  // _tmpStr += btnStateG;
+
+  // _tmpStr += " btnB";
+  // _tmpStr += btnStateB;
 
 
-    _tmpStr += " incR:";
-    _tmpStr += eeprom_live[EE_REG_R_INT];
-    _tmpStr += "  incG:";
-    _tmpStr += eeprom_live[EE_REG_G_INT];
-    _tmpStr += " incB:";
-    _tmpStr += eeprom_live[EE_REG_B_INT];
+  _tmpStr += " r:";
+  _tmpStr += c00.r;
+  _tmpStr += " b:";
+  _tmpStr += c00.b;
+  _tmpStr += " g:";
+  _tmpStr += c00.g;
 
-    // _tmpStr += " btnState";
-    // _tmpStr += btnState;
+  serPrntNL(_tmpStr);
 
-    // _tmpStr += " btnRState";
-    // _tmpStr += btnStateR;
-
-    // _tmpStr += " btnGState";
-    // _tmpStr += btnStateG;
-
-    // _tmpStr += " btnBState";
-    // _tmpStr += btnStateB;
-
-
-
-
-    _tmpStr += " r:";
-    _tmpStr += c00.r;
-    _tmpStr += " b:";
-    _tmpStr += c00.b;
-    _tmpStr += " g:";
-    _tmpStr += c00.g;
-
-    // _tmpStr += " r:";
-    // _tmpStr += r;
-    // _tmpStr += " b:";
-    // _tmpStr += b;
-    // _tmpStr += " g:";
-    // _tmpStr += g;
-    _tmpStr += " tmpInt:";
-    _tmpStr += tmpInt;
-
-    serPrntNL(_tmpStr);
-    }
-  }
+}
 
 //-----------------------------------------------------------------------------
 void paramSetColorHandler(String nCmd, String nParamName, int& nParam, int nVal) {
-  paramSetHandler(nCmd, nParamName, nParam, nVal, 255, 0);
+  paramSetHandler(nCmd, nParamName, nParam, nVal, NPX_AMP_MAX, 0);
   }
 
 //-----------------------------------------------------------------------------
@@ -413,12 +462,12 @@ void paramSetHandler(String nCmd, String nParamName, int& nParam, int nVal, int 
 
 //-----------------------------------------------------------------------------
 void paramIncColorHandler(String nCmd, String nParamName, int& nParam, int nInc) {
-  paramIncHandler(nCmd, nParamName, nParam, nInc, 255, 0);
+  paramIncHandler(nCmd, nParamName, nParam, nInc, NPX_AMP_MAX, 0);
   }
 
 //-----------------------------------------------------------------------------
 void paramIncColorHandler(String nCmd, String nParamName, float& nParam, int nInc) {
-  paramIncHandler(nCmd, nParamName, nParam, nInc, 255, 0);
+  paramIncHandler(nCmd, nParamName, nParam, nInc, NPX_AMP_MAX, 0);
   }
 
 //-----------------------------------------------------------------------------
@@ -475,40 +524,42 @@ void taskHandleSerIn() {
     paramIncColorHandler("rR-", "  max", tmpRmax, -1);
     paramIncColorHandler("rR++", " max", tmpRmax, 5);
     paramIncColorHandler("rR--", "  max", tmpRmax, -5);
-    paramIncHandler("rG+", " max", tmpGmax, 1, 255, 0);
-    paramIncHandler("rG-", "  max", tmpGmax, -1, 255, 0);
-    paramIncHandler("rG++", " max", tmpGmax, 5, 255, 0);
-    paramIncHandler("rG--", "  max", tmpGmax, -5, 255, 0);
-    paramIncHandler("rB+", " max", tmpBmax, 1, 255, 0);
-    paramIncHandler("rB-", "  max", tmpBmax, -1, 255, 0);
-    paramIncHandler("rB++", " max", tmpBmax, 5, 255, 0);
-    paramIncHandler("rB--", "  max", tmpBmax, -5, 255, 0);
+    paramIncHandler("rG+", " max", tmpGmax, 1, NPX_AMP_MAX, 0);
+    paramIncHandler("rG-", "  max", tmpGmax, -1, NPX_AMP_MAX, 0);
+    paramIncHandler("rG++", " max", tmpGmax, 5, NPX_AMP_MAX, 0);
+    paramIncHandler("rG--", "  max", tmpGmax, -5, NPX_AMP_MAX, 0);
+    paramIncHandler("rB+", " max", tmpBmax, 1, NPX_AMP_MAX, 0);
+    paramIncHandler("rB-", "  max", tmpBmax, -1, NPX_AMP_MAX, 0);
+    paramIncHandler("rB++", " max", tmpBmax, 5, NPX_AMP_MAX, 0);
+    paramIncHandler("rB--", "  max", tmpBmax, -5, NPX_AMP_MAX, 0);
 
-    paramIncHandler("ir+", " increment", tmpRint, .1, 64, 0);
-    paramIncHandler("ir-", "  increment", tmpRint, -.1, 64, 0);
-    paramIncHandler("ir++", " increment", tmpRint, 1, 64, 0);
-    paramIncHandler("ir--", "  increment", tmpRint, -1, 64, 0);
-    paramIncHandler("ig+", " increment", tmpGint, .1, 64, 0);
-    paramIncHandler("ig-", "  increment", tmpGint, -.1, 64, 0);
-    paramIncHandler("ig++", " increment", tmpGint, 1, 64, 0);
-    paramIncHandler("ig--", "  increment", tmpGint, -1, 64, 0);
-    paramIncHandler("ib+", " increment", tmpBint, 1, 64, 0);
-    paramIncHandler("ib-", "  increment", tmpBint, -1, 64, 0);
-    paramIncHandler("ib++", " increment", tmpBint, 1, 64, 0);
-    paramIncHandler("ib--", "  increment", tmpBint, -1, 64, 0);
+    paramIncHandler("ir+", " increment r", tmpRint, 1, NPX_INC_MAX, 0);
+    paramIncHandler("ir-", "  decrement r", tmpRint, -1, NPX_INC_MAX, 0);
+    paramIncHandler("ir++", " increment. r", tmpRint, 2, NPX_INC_MAX, 0);
+    paramIncHandler("ir--", "  increment. r", tmpRint, -2, NPX_INC_MAX, 0);
+
+    paramIncHandler("ig+", " increment g", tmpGint, 1, NPX_INC_MAX, 0);
+    paramIncHandler("ig-", "  increment g", tmpGint, -1, NPX_INC_MAX, 0);
+    paramIncHandler("ig++", " increment. g", tmpGint, 2, NPX_INC_MAX, 0);
+    paramIncHandler("ig--", "  increment. g", tmpGint, -2, NPX_INC_MAX, 0);
+
+    paramIncHandler("ib+", " increment b", tmpBint, 1, NPX_INC_MAX, 0);
+    paramIncHandler("ib-", "  increment b", tmpBint, -1, NPX_INC_MAX, 0);
+    paramIncHandler("ib++", " increment. b", tmpBint, 2, NPX_INC_MAX, 0);
+    paramIncHandler("ib--", "  increment. b", tmpBint, -2, NPX_INC_MAX, 0);
 
 
-    paramSetHandler("rrmx", "max ", tmpRmax, 255, 255, 1);
-    paramSetHandler("rrmd", "mid ", tmpRmax, 127, 255, 1);
-    paramSetHandler("rrmn", "min ", tmpRmax, 1, 255, 1);
+    paramSetHandler("rrmx", "max ", tmpRmax, NPX_AMP_MAX, NPX_AMP_MAX, 1);
+    paramSetHandler("rrmd", "mid ", tmpRmax, NPX_AMP_MID, NPX_AMP_MAX, 1);
+    paramSetHandler("rrmn", "min ", tmpRmax, 1, NPX_AMP_MAX, 1);
 
-    paramSetHandler("rgmx", "max ", tmpGmax, 255, 255, 1);
-    paramSetHandler("rgmd", "mid ", tmpGmax, 127, 255, 1);
-    paramSetHandler("rgmn", "min ", tmpGmax, 1, 255, 1);
+    paramSetHandler("rgmx", "max ", tmpGmax, NPX_AMP_MAX, NPX_AMP_MAX, 1);
+    paramSetHandler("rgmd", "mid ", tmpGmax, NPX_AMP_MID, NPX_AMP_MAX, 1);
+    paramSetHandler("rgmn", "min ", tmpGmax, 1, NPX_AMP_MAX, 1);
 
-    paramSetHandler("rbmx", "max ", tmpBmax, 255, 255, 1);
-    paramSetHandler("rbmd", "mid ", tmpBmax, 127, 255, 1);
-    paramSetHandler("rbmn", "min ", tmpBmax, 1, 255, 1);
+    paramSetHandler("rbmx", "max ", tmpBmax, NPX_AMP_MAX, NPX_AMP_MAX, 1);
+    paramSetHandler("rbmd", "mid ", tmpBmax, NPX_AMP_MID, NPX_AMP_MAX, 1);
+    paramSetHandler("rbmn", "min ", tmpBmax, 1, NPX_AMP_MAX, 1);
 
     serPrntVNL("tmpRmax", tmpRmax);
 
@@ -560,7 +611,7 @@ void taskHandleSerIn() {
       serPrntNL("read: read eeprom");
       readEEPROM();
       // calcColorRange();
-      btnState = true;
+      btnOState = true;
       serPrntNL("read: eeprom read");
 
       }
@@ -587,7 +638,7 @@ void taskHandleSerIn() {
       }
     else if (inStr == "btn") {
       serPrntNL("btn: sim button");
-      btnState = true;
+      btnOState = true;
       }
     else if (inStr == "btnR") {
       serPrntNL("btnR: sim button");
@@ -605,6 +656,14 @@ void taskHandleSerIn() {
       serPrntNL("btnRG: sim button");
       btnStateRG = true;
       }
+    else if (inStr == "enc+") {
+      serPrntNL("enc+:  sim encode pos inc");
+      amp_sel += 42;
+    }
+    else if (inStr == "enc-") {
+      serPrntNL("enc-: sim encode pos dec");
+      amp_sel -= 42;
+    }
 
     inStr = "";
     }
@@ -612,14 +671,23 @@ void taskHandleSerIn() {
 
 //=================================================================================================
 void setAllNeoPixels() {
-  for (int i = 0; i < NUM_NEOPIXELS; i++)
-    strip.setPixelColor(i, c00.r, c00.g, c00.b);
+  strip.fill(strip.Color(c00.r, c00.g, c00.b), 0, strip.numPixels());
+
+  // for (int i = 0; i < strip.numPixels(); i++)
+  //   strip.setPixelColor(i, c00.r, c00.g, c00.b);
   strip.show();
-  }
+}
 
 
 //=================================================================================================
 void taskNeopixelRing() {
+
+  if(amp_sel > 255)
+    amp_sel = 0;
+
+  if(amp_sel < 0)
+    amp_sel = 255;
+
   switch (npxlMode) {
       default:
       case NPX_MD_OFF:
@@ -629,21 +697,21 @@ void taskNeopixelRing() {
         break;
 
       case NPX_MD_ASYC_SINE:
-        c00.r = npxR.npcLedSine(eeprom_live[EE_REG_B_INT], eeprom_live[EE_REG_R_MAX]);
-        c00.g = npxG.npcLedSine(eeprom_live[EE_REG_B_INT], eeprom_live[EE_REG_G_MAX]);
+        c00.r = npxR.npcLedSine(eeprom_live[EE_REG_R_INT], eeprom_live[EE_REG_R_MAX]);
+        c00.g = npxG.npcLedSine(eeprom_live[EE_REG_G_INT], eeprom_live[EE_REG_G_MAX]);
         c00.b = npxB.npcLedSine(eeprom_live[EE_REG_B_INT], eeprom_live[EE_REG_B_MAX]);
 
         break;
 
       case NPX_MD_RED_SINE:
-        c00.r = npxR.npcLedSine(eeprom_live[EE_REG_B_INT], eeprom_live[EE_REG_R_MAX]);
+        c00.r = npxR.npcLedSine(eeprom_live[EE_REG_R_INT], eeprom_live[EE_REG_R_MAX]);
         c00.g = 0;
         c00.b = 0;
         break;
 
       case NPX_MD_GREEN_SINE:
         c00.r = 0;
-        c00.g = npxG.npcLedSine(eeprom_live[EE_REG_B_INT], eeprom_live[EE_REG_G_MAX]);
+        c00.g = npxG.npcLedSine(eeprom_live[EE_REG_G_INT], eeprom_live[EE_REG_G_MAX]);
         c00.b = 0;
         break;
 
@@ -654,7 +722,7 @@ void taskNeopixelRing() {
         break;
 
       case NPX_MD_STATIC_RED:
-        c00.r = eeprom_live[EE_REG_B_MAX];
+        c00.r = eeprom_live[EE_REG_R_MAX];
         c00.g = 0;
         c00.b = 0;
         break;
@@ -671,7 +739,7 @@ void taskNeopixelRing() {
         c00.b = eeprom_live[EE_REG_B_MAX];
         break;
       case NPX_MD_SET_R_MAX:
-
+        eeprom_live[EE_REG_R_MAX] = amp_sel;
         break;
 
       case NPX_MD_SET_R_MIN:
@@ -716,15 +784,12 @@ void taskNeopixelRing() {
 void loop() {
   taskHandleSerIn();
 
-  if (iCount == 15) {
-    dir = 1;
-    }
-
-  if (iCount % 4 == 0 and iCount > 15)
+  if (iCount % NPX_CALL_INTV == 0 && iCount > NPX_CALL_DELAY_CYCLES)
     taskNeopixelRing();
 
-  taskSerOut();
+  if (iCount % SER_WAIT_TICKS == 0)
+    taskSerOut();
 
   iCount++;
-  delay(10);
-  }
+  delay(LOOP_DELAY);
+}
