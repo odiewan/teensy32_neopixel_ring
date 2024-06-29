@@ -12,10 +12,10 @@
 #include <neopixel_effects.h>
 #include <npx_ring_event.h>
 
-#define SS_SWITCH        24
-#define SS_NEOPIX        6
+#define SS_SWITCH               24
+#define SS_NEOPIX               6
 
-#define SEESAW_ADDR          0x36
+#define SEESAW_ADDR             0x36
 
 #define EEPROM_SIZE             512
 #define EEPROM_DELAY            5
@@ -95,12 +95,13 @@ String op_mode_strs[] = {
 enum npx_modes {
   NPX_MD_OFF,           //  00
   NPX_MD_ASYC_SINE,     //  01
-  NPX_MD_RED_SINE,      //  02
-  NPX_MD_GREEN_SINE,    //  03
-  NPX_MD_BLUE_SINE,     //  04
-  NPX_MD_STATIC_RED,    //  05
-  NPX_MD_STATIC_GREEN,  //  06
-  NPX_MD_STATIC_BLUE,   //  07
+  NPX_MD_WHEEL,         //  02
+  NPX_MD_RED_SINE,      //  03
+  NPX_MD_GREEN_SINE,    //  04
+  NPX_MD_BLUE_SINE,     //  05
+  NPX_MD_STATIC_RED,    //  06
+  NPX_MD_STATIC_GREEN,  //  07
+  NPX_MD_STATIC_BLUE,   //  08
   NUM_NPX_MODES,
   };
 
@@ -108,6 +109,7 @@ String npx_mode_strs[] = {
   "OFF",
   "ASYC_SINE",
   "RED_SINE",
+  "WHEEL",
   "GREEN_SINE",
   "BLUE_SINE",
   "STATIC_RED",
@@ -185,6 +187,7 @@ int64_t iCount = 0;
 
 Adafruit_seesaw ss;
 Adafruit_NeoPixel strip(NUM_NEOPIXELS, NPXL_PIN, NEO_GRB + NEO_KHZ800);
+seesaw_NeoPixel sspixel = seesaw_NeoPixel(1, SS_NEOPIX, NEO_GRB + NEO_KHZ800);
 
 int32_t enc_position;
 int32_t new_position;
@@ -399,11 +402,12 @@ void setup() {
 
   Serial.println("Looking for seesaw!");
 
-  if (!ss.begin(SEESAW_ADDR)) {
+  if (!ss.begin(SEESAW_ADDR) || !sspixel.begin(SEESAW_ADDR)) {
     Serial.println("Couldn't find seesaw on default address");
     while (1) delay(10);
   }
   Serial.println("seesaw started");
+
 
   // use a pin for the built in encoder switch
   ss.pinMode(SS_SWITCH, INPUT_PULLUP);
@@ -416,6 +420,9 @@ void setup() {
   delay(10);
   ss.setGPIOInterrupts((uint32_t)1 << SS_SWITCH, 1);
   ss.enableEncoderInterrupt();
+
+  sspixel.setBrightness(20);
+  sspixel.show();
 
   delay(SETUP_DELAY);
 
@@ -795,6 +802,11 @@ void taskNpxModeHandler() {
 
       break;
 
+    case OP_MD_PATTERN_B:
+      npxlMode = NPX_MD_WHEEL;
+
+      break;
+
     case OP_MD_SET_NPX_MODE:
       npxlMode = NPX_MD_STATIC_RED;
       break;
@@ -859,6 +871,9 @@ void taskNeopixelRing() {
       // npxEnAry[NUM_NEOPIXELS]
 
       break;
+
+    case NPX_MD_WHEEL:
+      npxColor = Wheel(0);
 
     case NPX_MD_RED_SINE:
       cAll.r = npxR.npcLedSine(eeprom_live[EE_REG_R_INT], eeprom_live[EE_REG_R_MAX]);
@@ -1030,6 +1045,19 @@ void handleEncoder() {
   btnMainShadow = _ss;
 }
 
+//=================================================================================================
+uint32_t Wheel(byte WheelPos) {
+  WheelPos = 255 - WheelPos;
+  if (WheelPos < 85) {
+    return sspixel.Color(255 - WheelPos * 3, 0, WheelPos * 3);
+    }
+  if (WheelPos < 170) {
+    WheelPos -= 85;
+    return sspixel.Color(0, WheelPos * 3, 255 - WheelPos * 3);
+    }
+  WheelPos -= 170;
+  return sspixel.Color(WheelPos * 3, 255 - WheelPos * 3, 0);
+  }
 
 //=================================================================================================
 void loop() {
