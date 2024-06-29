@@ -41,7 +41,7 @@
 
 #define LOOP_DELAY              5
 
-#define SER_WAIT_TICKS          30
+#define SER_WAIT_TICKS          5
 #define SER_WAIT_DELAY          250
 
 #define SETUP_DELAY             1000
@@ -141,7 +141,10 @@ int x;
 int dir;
 int npxlMode = NPX_MD_ASYC_SINE;
 int npxlModeReq = NPX_MD_ASYC_SINE;
-int opMd = 0;
+int opMd = OP_MD_BOOT;
+bool setting_mode = false;
+int btn_dwn_tmr = 0;
+
 uint16_t idx = 0;
 uint8_t npxl_rotation_dir = true;
 
@@ -340,15 +343,18 @@ int writeEepromReg(uint16_t nIdx) {
     }
   }
 
-
+//=================================================================================================
+void isrBtn() {
+  btnMain = !ss.digitalRead(SS_SWITCH);
+}
 
 //=================================================================================================
 void setup() {
   int ser_wait_cnt = 0;
   opMd = OP_MD_BOOT;
   pinMode(LED_BUILTIN, OUTPUT);
-  // pinMode(BTN_PIN, INPUT);
-  // attachInterrupt(digitalPinToInterrupt(BTN_PIN), isrBtn, CHANGE);
+  pinMode(BTN_PIN, INPUT);
+  // attachInterrupt(digitalPinToInterrupt(SS_SWITCH), isrBtn, CHANGE);
 
   Serial.begin(9600);
   ledPulseTrain(3);
@@ -404,6 +410,7 @@ void setup() {
 
   // get starting position
   enc_position = ss.getEncoderPosition();
+  new_position = enc_position;
 
   Serial.println("Turning on interrupts");
   delay(10);
@@ -439,12 +446,12 @@ void taskSerOut() {
   _tmpStr += " enc_pos:";
   _tmpStr += enc_position;
 
-  // _tmpStr += " rR:";
-  // _tmpStr += eeprom_live[EE_REG_R_MAX];
-  // _tmpStr += " rG:";
-  // _tmpStr += eeprom_live[EE_REG_G_MAX];
-  // _tmpStr += " rB:";
-  // _tmpStr += eeprom_live[EE_REG_B_MAX];
+  _tmpStr += " rR:";
+  _tmpStr += eeprom_live[EE_REG_R_MAX];
+  _tmpStr += " rG:";
+  _tmpStr += eeprom_live[EE_REG_G_MAX];
+  _tmpStr += " rB:";
+  _tmpStr += eeprom_live[EE_REG_B_MAX];
 
 
   // _tmpStr += " incR:";
@@ -460,11 +467,11 @@ void taskSerOut() {
   // _tmpStr += " btnR";
   // _tmpStr += btnStateR;
 
-  // _tmpStr += " btnG";
-  // _tmpStr += btnStateG;
+  _tmpStr += " dwn_tmr:";
+  _tmpStr += btn_dwn_tmr;
 
-  // _tmpStr += " btnB";
-  // _tmpStr += btnStateB;
+  _tmpStr += " set_md:";
+  _tmpStr += setting_mode;
 
   // _tmpStr += " nreR.Color:";
   // _tmpStr += nreR.nreColor;
@@ -550,6 +557,20 @@ void paramIncHandler(String nCmd, String nParamName, int& nParam, int nInc, int 
       nParam = nUpLim;
     }
   }
+
+//-----------------------------------------------------------------------------
+void paramIncHandler(int nIdx, int nInc, int nUpLim, int nLoLim) {
+  int _param = eeprom_live[nIdx];
+
+  _param += nInc;
+
+  if (_param > nUpLim)
+    _param = nLoLim;
+  else if (_param < nLoLim)
+    _param = nUpLim;
+
+  eeprom_live[nIdx] = _param;
+}
 
 //-----------------------------------------------------------------------------
 void paramIncHandler(String nCmd, String nParamName, float& nParam, float nInc, float nUpLim, float nLoLim) {
@@ -897,37 +918,124 @@ void taskNeopixelRing() {
 
   }
 
+
+// OP_MD_BOOT,
+// OP_MD_SETUP,
+// OP_MD_PATTERN_A,
+// OP_MD_PATTERN_B,
+// OP_MD_PATTERN_C,
+// OP_MD_SET_NPX_MODE,
+// OP_MD_SET_R_MAX,
+// OP_MD_SET_G_MAX,
+// OP_MD_SET_B_MAX,
+// NUM_OP_MODES,
 //=================================================================================================
 void taskModeHandler() {
-  if(opMd >= NUM_OP_MODES)
-    opMd = OP_MD_PATTERN_A;
+  static bool setting_mode_shadow;
 
-  if(opMd < OP_MD_PATTERN_A)
-    opMd = NUM_OP_MODES - 1;
+  if(!setting_mode) {
+    if(setting_mode_shadow != setting_mode)
+      opMd = OP_MD_SET_NPX_MODE;
 
+
+    if (opMd >= OP_MD_PATTERN_C)
+      opMd = OP_MD_PATTERN_A;
+
+    if (opMd < OP_MD_PATTERN_A)
+      opMd = OP_MD_PATTERN_C - 1;
+
+
+  }
+  else{
+    if (setting_mode_shadow != setting_mode)
+      opMd = OP_MD_PATTERN_A;
+
+    if(opMd >= NUM_OP_MODES)
+      opMd = OP_MD_SET_NPX_MODE;
+
+    if (opMd < OP_MD_SET_NPX_MODE)
+      opMd = NUM_OP_MODES - 1;
+
+
+
+
+
+  }
+
+  setting_mode_shadow = setting_mode;
 }
 
 //=================================================================================================
 void handleEncoder() {
-  btnMain = !ss.digitalRead(SS_SWITCH);
-  if (btnMain && btnMainShadow) {
-
-  }
-
+  bool _ss = !ss.digitalRead(SS_SWITCH);
+  btnMain = _ss;
   new_position = ss.getEncoderPosition();
+
   if (enc_position != new_position) {
 
-    enc_delta = new_position -enc_position;
+    enc_delta = new_position - enc_position;
     enc_position = new_position;
-    opMd += enc_delta;
+  }
+  else
+    enc_delta = 0;
+
+  switch (opMd) {
+    default:
+    case OP_MD_BOOT:
+    case OP_MD_SETUP:
+      break;
+
+    case OP_MD_PATTERN_A:
+    case OP_MD_PATTERN_B:
+    case OP_MD_PATTERN_C:
+      if (btnMain && btnMainShadow != btnMain)
+        opMd++;
+
+
+      if (btnMain) {
+        btn_dwn_tmr++;
+      }
+      else
+        btn_dwn_tmr = 0;
+
+      if (btn_dwn_tmr > 100) {
+        setting_mode = !setting_mode;
+        btnStateR = true;
+      }
+      break;
+
+    case OP_MD_SET_NPX_MODE:
+      opMd += enc_delta;
+      break;
+
+    case OP_MD_SET_R_MAX:
+      paramIncHandler(EE_REG_R_MAX, enc_delta, 255, 1);
+      if(btnMain && btnMainShadow != btnMain)
+        opMd++;
+      break;
+
+    case OP_MD_SET_G_MAX:
+      paramIncHandler(EE_REG_G_MAX, enc_delta, 255, 1);
+      if (btnMain && btnMainShadow != btnMain)
+        opMd++;
+      break;
+
+    case OP_MD_SET_B_MAX:
+      paramIncHandler(EE_REG_B_MAX, enc_delta, 255, 1);
+      if (btnMain && btnMainShadow != btnMain)
+        opMd++;
+      break;
   }
 
-
+  btnMainShadow = _ss;
 }
 
 
 //=================================================================================================
 void loop() {
+  // if(iCount < 5){
+  //   npxlMode = NPX_MD_ASYC_SINE;
+  // }
 
   handleEncoder();
 
@@ -937,6 +1045,7 @@ void loop() {
 
 
   if (iCount % NPX_CALL_INTV == 0 && iCount > NPX_CALL_DELAY_CYCLES){
+
     taskNpxModeHandler();
     taskNeopixelRing();
 
