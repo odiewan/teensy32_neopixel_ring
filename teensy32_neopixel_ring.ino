@@ -6,10 +6,16 @@
 #include <Adafruit_GFX.h>
 #include <led_pulse_train.h>
 #include <Adafruit_NeoPixel.h>
+#include <Adafruit_seesaw.h>
+#include <seesaw_neopixel.h>
 #include <serialPrint.h>
 #include <neopixel_effects.h>
 #include <npx_ring_event.h>
 
+#define SS_SWITCH        24
+#define SS_NEOPIX        6
+
+#define SEESAW_ADDR          0x36
 
 #define EEPROM_SIZE             512
 #define EEPROM_DELAY            5
@@ -63,7 +69,9 @@
 enum op_modes {
   OP_MD_BOOT,
   OP_MD_SETUP,
-  OP_MD_RUN,
+  OP_MD_PATTERN_A,
+  OP_MD_PATTERN_B,
+  OP_MD_PATTERN_C,
   OP_MD_SET_NPX_MODE,
   OP_MD_SET_R_MAX,
   OP_MD_SET_G_MAX,
@@ -74,12 +82,15 @@ enum op_modes {
 String op_mode_strs[] = {
   "BOOT",
   "SETUP",
-  "RUN",
+  "PATTERN_A",
+  "PATTERN_B",
+  "PATTERN_C",
   "SET_NPX_M",
   "SET_R_MAX",
   "SET_G_MAX",
   "SET_B_MAX",
 };
+
 
 enum npx_modes {
   NPX_MD_OFF,           //  00
@@ -169,8 +180,13 @@ String inStr = "";
 
 int64_t iCount = 0;
 
-// Adafruit_seesaw ss;
+Adafruit_seesaw ss;
 Adafruit_NeoPixel strip(NUM_NEOPIXELS, NPXL_PIN, NEO_GRB + NEO_KHZ800);
+
+int32_t enc_position;
+int32_t new_position;
+int32_t enc_delta;
+
 bool nxplEn = true;
 
 bool btnMain = false;
@@ -331,8 +347,8 @@ void setup() {
   int ser_wait_cnt = 0;
   opMd = OP_MD_BOOT;
   pinMode(LED_BUILTIN, OUTPUT);
-  pinMode(BTN_PIN, INPUT);
-  attachInterrupt(digitalPinToInterrupt(BTN_PIN), isrBtn, CHANGE);
+  // pinMode(BTN_PIN, INPUT);
+  // attachInterrupt(digitalPinToInterrupt(BTN_PIN), isrBtn, CHANGE);
 
   Serial.begin(9600);
   ledPulseTrain(3);
@@ -342,6 +358,8 @@ void setup() {
     delay(SER_WAIT_DELAY);
     }
   serPrntNL("Serial OK");
+
+
 
   ledPulseTrain(4);
   serPrntNL("Read EEPROM contents");
@@ -373,9 +391,29 @@ void setup() {
   ledPulseTrain(6);
 
 
+  Serial.println("Looking for seesaw!");
+
+  if (!ss.begin(SEESAW_ADDR)) {
+    Serial.println("Couldn't find seesaw on default address");
+    while (1) delay(10);
+  }
+  Serial.println("seesaw started");
+
+  // use a pin for the built in encoder switch
+  ss.pinMode(SS_SWITCH, INPUT_PULLUP);
+
+  // get starting position
+  enc_position = ss.getEncoderPosition();
+
+  Serial.println("Turning on interrupts");
+  delay(10);
+  ss.setGPIOInterrupts((uint32_t)1 << SS_SWITCH, 1);
+  ss.enableEncoderInterrupt();
+
   delay(SETUP_DELAY);
 
-  opMd = OP_MD_RUN;
+
+  opMd = OP_MD_PATTERN_A;
   serPrntNL("Setup done");
 
   }
@@ -397,6 +435,9 @@ void taskSerOut() {
 
   _tmpStr += " btn:";
   _tmpStr += btnMain;
+
+  _tmpStr += " enc_pos:";
+  _tmpStr += enc_position;
 
   // _tmpStr += " rR:";
   // _tmpStr += eeprom_live[EE_REG_R_MAX];
@@ -544,7 +585,7 @@ void setAllNeoPixels() {
 // }
 
 //-----------------------------------------------------------------------------
-void taskHandleSerIn() {
+void handleSerIn() {
   if (recvWithEndMarker() > "") {
     int tmpRmax = eeprom_live[EE_REG_R_MAX];
     int tmpGmax = eeprom_live[EE_REG_G_MAX];
@@ -728,7 +769,7 @@ void taskNpxModeHandler() {
     case OP_MD_SETUP:
       break;
 
-    case OP_MD_RUN:
+    case OP_MD_PATTERN_A:
       npxlMode = eeprom_live[EE_REG_NEOPIXEL_MODE];
 
       break;
@@ -858,32 +899,42 @@ void taskNeopixelRing() {
 
 //=================================================================================================
 void taskModeHandler() {
+  if(opMd >= NUM_OP_MODES)
+    opMd = OP_MD_PATTERN_A;
 
+  if(opMd < OP_MD_PATTERN_A)
+    opMd = NUM_OP_MODES - 1;
 
-  }
+}
 
 //=================================================================================================
-void isrBtn() {
-  static int btnMainAccum = 0;
-  btnMain = !digitalRead(BTN_PIN);
-  if (btnMain == true && btnMain != btnMainShadow)
-    btnMainAccum++;
+void handleEncoder() {
+  btnMain = !ss.digitalRead(SS_SWITCH);
+  if (btnMain && btnMainShadow) {
 
-  if (btnMainAccum > 1) {
-    opMd++;
-    btnMainAccum = 0;
   }
 
-  if (opMd >= NUM_OP_MODES)
-    opMd = 0;
+  new_position = ss.getEncoderPosition();
+  if (enc_position != new_position) {
 
-  btnMain = btnMainShadow;
+    enc_delta = new_position -enc_position;
+    enc_position = new_position;
+    opMd += enc_delta;
+  }
+
+
 }
+
 
 //=================================================================================================
 void loop() {
 
-  taskHandleSerIn();
+  handleEncoder();
+
+  handleSerIn();
+
+  taskModeHandler();
+
 
   if (iCount % NPX_CALL_INTV == 0 && iCount > NPX_CALL_DELAY_CYCLES){
     taskNpxModeHandler();
