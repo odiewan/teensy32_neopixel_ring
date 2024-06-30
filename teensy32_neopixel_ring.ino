@@ -76,45 +76,49 @@ enum op_modes {
   OP_MD_SET_R_MAX,
   OP_MD_SET_G_MAX,
   OP_MD_SET_B_MAX,
+  OP_MD_SET_SAVE,
   NUM_OP_MODES,
   };
 
 String op_mode_strs[] = {
   "BOOT",
   "SETUP",
-  "PATTERN_A",
-  "PATTERN_B",
-  "PATTERN_C",
+  "OPT_A",
+  "OPT_B",
+  "OPT_C",
   "SET_NPX_M",
-  "SET_R_MAX",
-  "SET_G_MAX",
-  "SET_B_MAX",
-};
+  "SET_RMAX",
+  "SET_GMAX",
+  "SET_BMAX",
+  "Save",
+  };
 
 
 enum npx_modes {
   NPX_MD_OFF,           //  00
   NPX_MD_ASYC_SINE,     //  01
   NPX_MD_WHEEL,         //  02
-  NPX_MD_RED_SINE,      //  03
-  NPX_MD_GREEN_SINE,    //  04
-  NPX_MD_BLUE_SINE,     //  05
-  NPX_MD_STATIC_RED,    //  06
-  NPX_MD_STATIC_GREEN,  //  07
-  NPX_MD_STATIC_BLUE,   //  08
+  NPX_MD_WHEEL_SINGLE,  //  03
+  NPX_MD_RED_SINE,      //  04
+  NPX_MD_GREEN_SINE,    //  05
+  NPX_MD_BLUE_SINE,     //  06
+  NPX_MD_RED_STATIC,    //  07
+  NPX_MD_GREEN_STATIC,  //  08
+  NPX_MD_BLUE_STATIC,   //  09
   NUM_NPX_MODES,
   };
 
 String npx_mode_strs[] = {
   "OFF",
-  "ASYC_SINE",
-  "RED_SINE",
-  "WHEEL",
-  "GREEN_SINE",
-  "BLUE_SINE",
-  "STATIC_RED",
-  "STATIC_GREEN",
-  "STATIC_BLUE",
+  "ASYC_SIN",
+  "WHL All",
+  "WHL Single",
+  "RED_SIN",
+  "GREEN_SIN",
+  "BLUE_SIN",
+  "RED_STATIC",
+  "GREEN_STATIC",
+  "BLUE_STATIC",
 
   };
 
@@ -141,11 +145,12 @@ char inByteBuffer[NUM_BYTES] = {};
 
 int x;
 int dir;
-int npxlMode = NPX_MD_ASYC_SINE;
-int npxlModeReq = NPX_MD_ASYC_SINE;
-int opMd = OP_MD_BOOT;
-bool setting_mode = false;
-int btn_dwn_tmr = 0;
+int npxlMode;
+int npxlModeReq;
+int opMd;
+bool setting_mode;
+int btn_dwn_tmr;
+int npxIdx;
 
 uint16_t idx = 0;
 uint8_t npxl_rotation_dir = true;
@@ -159,27 +164,25 @@ int amp_sel = 0;
 colorVector cAll = { 0,0,0 };
 
 bool npxEnAry[NUM_NEOPIXELS] = {
-true,
-true,
-true,
-true,
-true,
-true,
-true,
-true,
-true,
-true,
-true,
-true,
-true,
-true,
-true,
-true,
-};
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  };
 
 
-
-float rRads = 0;
 
 String inStr = "";
 
@@ -193,15 +196,15 @@ int32_t enc_position;
 int32_t new_position;
 int32_t enc_delta;
 
-bool nxplEn = true;
+bool nxplEn;
 
-bool btnMain = false;
-bool btnMainShadow = false;
-bool btnOState = false;
-bool btnStateR = false;
-bool btnStateG = false;
-bool btnStateB = false;
-bool btnStateRG = false;
+bool btnMain;
+bool btnMainShadow;
+bool btnOState;
+bool btnStateR;
+bool btnStateG;
+bool btnStateB;
+bool btnStateRG;
 
 
 neopixel_color npxR;
@@ -214,7 +217,8 @@ npx_ring_event nreG;
 npx_ring_event nreB;
 npx_ring_event nreRG;
 
-uint32_t npxColor = 0;
+uint32_t npxColor;
+uint8_t _wheelPos;
 
 //=================================================================================================
 void ledToggle() {
@@ -349,12 +353,13 @@ int writeEepromReg(uint16_t nIdx) {
 //=================================================================================================
 void isrBtn() {
   btnMain = !ss.digitalRead(SS_SWITCH);
-}
+  }
 
 //=================================================================================================
 void setup() {
   int ser_wait_cnt = 0;
   opMd = OP_MD_BOOT;
+  npxlModeReq = NPX_MD_ASYC_SINE;
   pinMode(LED_BUILTIN, OUTPUT);
   pinMode(BTN_PIN, INPUT);
   // attachInterrupt(digitalPinToInterrupt(SS_SWITCH), isrBtn, CHANGE);
@@ -378,7 +383,22 @@ void setup() {
 
   strip.begin();
   strip.setPixelColor(0, eeprom_live[EE_REG_R_MAX], 0, 0);
+  strip.setPixelColor(1, eeprom_live[EE_REG_R_MAX], 0, 0);
+  strip.setPixelColor(2, eeprom_live[EE_REG_R_MAX], 0, 0);
+  strip.setPixelColor(3, eeprom_live[EE_REG_R_MAX], 0, 0);
+  strip.setPixelColor(4, eeprom_live[EE_REG_R_MAX], 0, 0);
+
+  strip.setPixelColor(5, 0, eeprom_live[EE_REG_G_MAX], 0);
+  strip.setPixelColor(6, 0, eeprom_live[EE_REG_G_MAX], 0);
+  strip.setPixelColor(7, 0, eeprom_live[EE_REG_G_MAX], 0);
   strip.setPixelColor(8, 0, eeprom_live[EE_REG_G_MAX], 0);
+  strip.setPixelColor(9, 0, eeprom_live[EE_REG_G_MAX], 0);
+
+  strip.setPixelColor(10, 0, 0, eeprom_live[EE_REG_G_MAX]);
+  strip.setPixelColor(11, 0, 0, eeprom_live[EE_REG_G_MAX]);
+  strip.setPixelColor(12, 0, 0, eeprom_live[EE_REG_G_MAX]);
+  strip.setPixelColor(13, 0, 0, eeprom_live[EE_REG_G_MAX]);
+  strip.setPixelColor(14, 0, 0, eeprom_live[EE_REG_G_MAX]);
   strip.setPixelColor(15, 0, 0, eeprom_live[EE_REG_B_MAX]);
   strip.show();
 
@@ -405,7 +425,7 @@ void setup() {
   if (!ss.begin(SEESAW_ADDR) || !sspixel.begin(SEESAW_ADDR)) {
     Serial.println("Couldn't find seesaw on default address");
     while (1) delay(10);
-  }
+    }
   Serial.println("seesaw started");
 
 
@@ -432,95 +452,7 @@ void setup() {
 
   }
 
-//=================================================================================================
-void taskSerOut() {
-  String _tmpStr = "";
 
-  _tmpStr = "--iC:";
-  _tmpStr += iCount;
-
-  _tmpStr += " opMd:";
-  _tmpStr += opMd;
-  _tmpStr += "(" + op_mode_strs[opMd] + ")";
-
-  _tmpStr += " npxlMd:";
-  _tmpStr += npxlMode;
-  _tmpStr += "(" + npx_mode_strs[npxlMode] + ")";
-
-  _tmpStr += " btn:";
-  _tmpStr += btnMain;
-
-  _tmpStr += " enc_pos:";
-  _tmpStr += enc_position;
-
-  _tmpStr += " rR:";
-  _tmpStr += eeprom_live[EE_REG_R_MAX];
-  _tmpStr += " rG:";
-  _tmpStr += eeprom_live[EE_REG_G_MAX];
-  _tmpStr += " rB:";
-  _tmpStr += eeprom_live[EE_REG_B_MAX];
-
-
-  // _tmpStr += " incR:";
-  // _tmpStr += eeprom_live[EE_REG_R_INT];
-  // _tmpStr += "  incG:";
-  // _tmpStr += eeprom_live[EE_REG_G_INT];
-  // _tmpStr += " incB:";
-  // _tmpStr += eeprom_live[EE_REG_B_INT];
-
-  // _tmpStr += " btnO";
-  // _tmpStr += btnOState;
-
-  // _tmpStr += " btnR";
-  // _tmpStr += btnStateR;
-
-  _tmpStr += " dwn_tmr:";
-  _tmpStr += btn_dwn_tmr;
-
-  _tmpStr += " set_md:";
-  _tmpStr += setting_mode;
-
-  // _tmpStr += " nreR.Color:";
-  // _tmpStr += nreR.nreColor;
-  // _tmpStr += " R:";
-  // _tmpStr += nreR.nreR;
-  // _tmpStr += " G:";
-  // _tmpStr += nreR.nreG;
-  // _tmpStr += " B:";
-  // _tmpStr += nreR.nreB;
-
-  // _tmpStr += " nreG.Color:";
-  // _tmpStr += nreG.nreColor;
-  // _tmpStr += " R:";
-  // _tmpStr += nreG.nreR;
-  // _tmpStr += " G:";
-  // _tmpStr += nreG.nreG;
-  // _tmpStr += " B:";
-  // _tmpStr += nreG.nreB;
-
-  // _tmpStr += " nreB.Color:";
-  // _tmpStr += nreB.nreColor;
-  // _tmpStr += " B:";
-  // _tmpStr += nreB.nreB;
-  // _tmpStr += " G:";
-  // _tmpStr += nreB.nreG;
-  // _tmpStr += " B:";
-  // _tmpStr += nreB.nreB;
-
-
-  // _tmpStr += " npxColor:";
-  // _tmpStr += npxColor;
-
-  _tmpStr += " r:";
-  _tmpStr += cAll.r;
-  _tmpStr += " b:";
-  _tmpStr += cAll.b;
-  _tmpStr += " g:";
-  _tmpStr += cAll.g;
-
-  serPrntNL(_tmpStr);
-
-  }
 
 //-----------------------------------------------------------------------------
 void paramSetColorHandler(String nCmd, String nParamName, int& nParam, int nVal) {
@@ -562,8 +494,8 @@ void paramIncHandler(String nCmd, String nParamName, int& nParam, int nInc, int 
       nParam = nLoLim;
     else if (nParam < nLoLim)
       nParam = nUpLim;
-    }
   }
+}
 
 //-----------------------------------------------------------------------------
 void paramIncHandler(int nIdx, int nInc, int nUpLim, int nLoLim) {
@@ -598,13 +530,43 @@ void paramIncHandler(String nCmd, String nParamName, float& nParam, float nInc, 
 //=================================================================================================
 void setAllNeoPixels() {
   // strip.fill(strip.Color(cAll.r, cAll.g, cAll.b), 0, strip.numPixels());
-  for(int i = 0; i < strip.numPixels(); i++){
-    if(npxEnAry[i])
+  for (int i = 0; i < strip.numPixels(); i++) {
+    if (npxEnAry[i])
       strip.setPixelColor(i, strip.Color(cAll.r, cAll.g, cAll.b));
-  }
+    }
 
   strip.show();
   }
+
+//=================================================================================================
+void setAllNeoPixels(uint32_t nColor) {
+  // strip.fill(strip.Color(cAll.r, cAll.g, cAll.b), 0, strip.numPixels());
+
+  for (int i = 0; i < strip.numPixels(); i++) {
+    if (npxEnAry[i])
+      strip.setPixelColor(i, nColor);
+    else
+      strip.setPixelColor(i, 0);
+    }
+
+  strip.show();
+  }
+
+
+//=================================================================================================
+uint32_t Wheel(uint8_t WheelPos) {
+  WheelPos = 255 - WheelPos;
+  if (WheelPos < 85) {
+    return sspixel.Color(255 - WheelPos * 3, 0, WheelPos * 3);
+    }
+  if (WheelPos < 170) {
+    WheelPos -= 85;
+    return sspixel.Color(0, WheelPos * 3, 255 - WheelPos * 3);
+    }
+  WheelPos -= 170;
+  return sspixel.Color(WheelPos * 3, 255 - WheelPos * 3, 0);
+  }
+
 
 // //=================================================================================================
 // void setAllNeoPixels() {
@@ -625,11 +587,11 @@ void handleSerIn() {
     int tmpGint = eeprom_live[EE_REG_G_INT];
     int tmpBint = eeprom_live[EE_REG_B_INT];
 
+
     paramIncHandler("nm+", "next neopixel mode", npxlModeReq, 1, NUM_NPX_MODES, 0);
     paramIncHandler("nm-", "next neopixel mode", npxlModeReq, -1, NUM_NPX_MODES, 0);
 
-    eeprom_live[EE_REG_NEOPIXEL_MODE] = npxlMode;
-
+    eeprom_live[EE_REG_NEOPIXEL_MODE] = npxlModeReq;
 
 
     paramIncColorHandler("rR+", " max", tmpRmax, 1);
@@ -782,6 +744,104 @@ void handleSerIn() {
   }
 
 //=================================================================================================
+void taskSerOut() {
+  String _tmpStr = "";
+
+  _tmpStr = "iC:";
+  _tmpStr += iCount;
+
+  _tmpStr += " opMd:";
+  _tmpStr += opMd;
+  _tmpStr += "(" + op_mode_strs[opMd] + ")";
+
+  _tmpStr += " npxlMd:";
+  _tmpStr += npxlMode;
+  _tmpStr += "(" + npx_mode_strs[npxlMode] + ")";
+
+  _tmpStr += " btn:";
+  _tmpStr += btnMain;
+
+  // _tmpStr += " enc_pos:";
+  // _tmpStr += enc_position;
+
+  // _tmpStr += " _wPos:";
+  // _tmpStr += _wheelPos;
+
+
+  _tmpStr += " npx:";
+  _tmpStr += npxIdx;
+
+
+
+  _tmpStr += " eeprm:R:";
+  _tmpStr += eeprom_live[EE_REG_R_MAX];
+  _tmpStr += " G:";
+  _tmpStr += eeprom_live[EE_REG_G_MAX];
+  _tmpStr += " B:";
+  _tmpStr += eeprom_live[EE_REG_B_MAX];
+
+
+  // _tmpStr += " incR:";
+  // _tmpStr += eeprom_live[EE_REG_R_INT];
+  // _tmpStr += "  incG:";
+  // _tmpStr += eeprom_live[EE_REG_G_INT];
+  // _tmpStr += " incB:";
+  // _tmpStr += eeprom_live[EE_REG_B_INT];
+
+  // _tmpStr += " btnO";
+  // _tmpStr += btnOState;
+
+  // _tmpStr += " btnR";
+  // _tmpStr += btnStateR;
+
+  // _tmpStr += " dwn_tmr:";
+  // _tmpStr += btn_dwn_tmr;
+
+  _tmpStr += " set_md:";
+  _tmpStr += setting_mode;
+
+  // _tmpStr += " nreR.Color:";
+  // _tmpStr += nreR.nreColor;
+  // _tmpStr += " R:";
+  // _tmpStr += nreR.nreR;
+  // _tmpStr += " G:";
+  // _tmpStr += nreR.nreG;
+  // _tmpStr += " B:";
+  // _tmpStr += nreR.nreB;
+
+  // _tmpStr += " nreG.Color:";
+  // _tmpStr += nreG.nreColor;
+  // _tmpStr += " R:";
+  // _tmpStr += nreG.nreR;
+  // _tmpStr += " G:";
+  // _tmpStr += nreG.nreG;
+  // _tmpStr += " B:";
+  // _tmpStr += nreG.nreB;
+
+  // _tmpStr += " nreB.Color:";
+  // _tmpStr += nreB.nreColor;
+  // _tmpStr += " B:";
+  // _tmpStr += nreB.nreB;
+  // _tmpStr += " G:";
+  // _tmpStr += nreB.nreG;
+  // _tmpStr += " B:";
+  // _tmpStr += nreB.nreB;
+
+  _tmpStr += " npxClr:";
+  _tmpStr += npxColor;
+
+  // _tmpStr += " r:";
+  // _tmpStr += (npxColor & 0x00FF0000) >> 16;
+  // _tmpStr += " g:";
+  // _tmpStr += (npxColor & 0x0000FF00) >> 8;
+  // _tmpStr += " b:";
+  // _tmpStr += (npxColor & 0x000000FF);
+
+  serPrntNL(_tmpStr);
+
+  }
+
+//=================================================================================================
 // NPX_MD_OFF,
 // NPX_MD_ASYC_SINE
 // NPX_MD_GREEN_SINE
@@ -792,44 +852,135 @@ void handleSerIn() {
 //=================================================================================================
 void taskNpxModeHandler() {
   switch (opMd) {
-    default:
-    case OP_MD_BOOT:
-    case OP_MD_SETUP:
-      break;
+      default:
+      case OP_MD_BOOT:
+      case OP_MD_SETUP:
+        break;
 
-    case OP_MD_PATTERN_A:
-      npxlMode = eeprom_live[EE_REG_NEOPIXEL_MODE];
+      case OP_MD_PATTERN_A:
+        npxlMode = eeprom_live[EE_REG_NEOPIXEL_MODE];
+        break;
 
-      break;
+      case OP_MD_PATTERN_B:
+        npxlMode = NPX_MD_WHEEL;
+        break;
 
-    case OP_MD_PATTERN_B:
-      npxlMode = NPX_MD_WHEEL;
+      case OP_MD_PATTERN_C:
+        npxlMode = NPX_MD_WHEEL_SINGLE;
+        break;
 
-      break;
+      case OP_MD_SET_NPX_MODE:
+        npxlMode = NPX_MD_WHEEL_SINGLE;
+        break;
 
-    case OP_MD_SET_NPX_MODE:
-      npxlMode = NPX_MD_STATIC_RED;
-      break;
+      case OP_MD_SET_R_MAX:
+        npxlMode = NPX_MD_RED_STATIC;
+        break;
 
-    case OP_MD_SET_R_MAX:
-      npxlMode = NPX_MD_RED_SINE;
-      break;
+      case OP_MD_SET_G_MAX:
+        npxlMode = NPX_MD_GREEN_STATIC;
 
-    case OP_MD_SET_G_MAX:
-      npxlMode = NPX_MD_GREEN_SINE;
+        break;
 
-      break;
+      case OP_MD_SET_B_MAX:
+        npxlMode = NPX_MD_BLUE_STATIC;
 
-    case OP_MD_SET_B_MAX:
-      npxlMode = NPX_MD_BLUE_SINE;
-
-      break;
+        break;
 
     }
   }
 
+
 //=================================================================================================
 void taskNeopixelRing() {
+  // static int _npxIdx = 0;
+
+  switch (npxlMode) {
+    default:
+    case NPX_MD_OFF:
+      std::fill(std::begin(npxEnAry), std::end(npxEnAry), true);
+      cAll.r = 1;
+      cAll.g = 1;
+      cAll.b = 1;
+      npxColor = strip.Color(cAll.r, cAll.g, cAll.b);
+      break;
+
+    case NPX_MD_ASYC_SINE:
+      std::fill(std::begin(npxEnAry), std::end(npxEnAry), true);
+      cAll.r = npxR.npcLedSine(eeprom_live[EE_REG_R_INT], eeprom_live[EE_REG_R_MAX]);
+      cAll.g = npxG.npcLedSine(eeprom_live[EE_REG_G_INT], eeprom_live[EE_REG_G_MAX]);
+      cAll.b = npxB.npcLedSine(eeprom_live[EE_REG_B_INT], eeprom_live[EE_REG_B_MAX]);
+      npxColor = strip.Color(cAll.r, cAll.g, cAll.b);
+
+      break;
+
+    case NPX_MD_WHEEL:
+      std::fill(std::begin(npxEnAry), std::end(npxEnAry), true);
+      _wheelPos++;
+      npxColor = Wheel(_wheelPos);
+      break;
+
+
+    case NPX_MD_WHEEL_SINGLE:
+      std::fill(std::begin(npxEnAry), std::end(npxEnAry), false);
+      _wheelPos++;
+      npxIdx++;
+      npxEnAry[npxIdx] = true;
+      npxColor = Wheel(_wheelPos);
+
+      break;
+
+
+    case NPX_MD_RED_SINE:
+      std::fill(std::begin(npxEnAry), std::end(npxEnAry), true);
+      cAll.r = npxR.npcLedSine(eeprom_live[EE_REG_R_INT], eeprom_live[EE_REG_R_MAX]);
+      cAll.g = 0;
+      cAll.b = 0;
+      npxColor = strip.Color(cAll.r, cAll.g, cAll.b);
+      break;
+
+    case NPX_MD_GREEN_SINE:
+      std::fill(std::begin(npxEnAry), std::end(npxEnAry), true);
+      cAll.r = 0;
+      cAll.g = npxG.npcLedSine(eeprom_live[EE_REG_G_INT], eeprom_live[EE_REG_G_MAX]);
+      cAll.b = 0;
+      npxColor = strip.Color(cAll.r, cAll.g, cAll.b);
+      break;
+
+    case NPX_MD_BLUE_SINE:
+      std::fill(std::begin(npxEnAry), std::end(npxEnAry), true);
+      cAll.r = 0;
+      cAll.g = 0;
+      cAll.b = npxB.npcLedSine(eeprom_live[EE_REG_B_INT], eeprom_live[EE_REG_B_MAX]);
+      npxColor = strip.Color(cAll.r, cAll.g, cAll.b);
+      break;
+
+    case NPX_MD_RED_STATIC:
+      std::fill(std::begin(npxEnAry), std::end(npxEnAry), true);
+      cAll.r = eeprom_live[EE_REG_R_MAX];
+      cAll.g = 0;
+      cAll.b = 0;
+      npxColor = strip.Color(cAll.r, cAll.g, cAll.b);
+
+
+      break;
+
+    case NPX_MD_GREEN_STATIC:
+      std::fill(std::begin(npxEnAry), std::end(npxEnAry), true);
+      cAll.r = 0;
+      cAll.g = eeprom_live[EE_REG_G_MAX];
+      cAll.b = 0;
+      npxColor = strip.Color(cAll.r, cAll.g, cAll.b);
+      break;
+
+    case NPX_MD_BLUE_STATIC:
+      std::fill(std::begin(npxEnAry), std::end(npxEnAry), true);
+      cAll.r = 0;
+      cAll.g = 0;
+      cAll.b = eeprom_live[EE_REG_B_MAX];
+      npxColor = strip.Color(cAll.r, cAll.g, cAll.b);
+      break;
+  }
 
   if (amp_sel > 255)
     amp_sel = 0;
@@ -837,88 +988,19 @@ void taskNeopixelRing() {
   if (amp_sel < 0)
     amp_sel = 255;
 
-  npxEnAry[0] = true;
-  npxEnAry[1] = true;
-  npxEnAry[2] = true;
-  npxEnAry[3] = true;
-  npxEnAry[4] = true;
-  npxEnAry[5] = true;
-  npxEnAry[6] = true;
-  npxEnAry[7] = true;
-  npxEnAry[8] = true;
-  npxEnAry[9] = true;
-  npxEnAry[10] = true;
-  npxEnAry[11] = true;
-  npxEnAry[12] = true;
-  npxEnAry[13] = true;
-  npxEnAry[14] = true;
-  npxEnAry[15] = true;
+  if (npxIdx > strip.numPixels() - 1)
+    npxIdx = 0;
 
-  switch (npxlMode) {
-    default:
-    case NPX_MD_OFF:
-      cAll.r = 1;
-      cAll.g = 1;
-      cAll.b = 1;
-      break;
-
-    case NPX_MD_ASYC_SINE:
-      cAll.r = npxR.npcLedSine(eeprom_live[EE_REG_R_INT], eeprom_live[EE_REG_R_MAX]);
-      cAll.g = npxG.npcLedSine(eeprom_live[EE_REG_G_INT], eeprom_live[EE_REG_G_MAX]);
-      cAll.b = npxB.npcLedSine(eeprom_live[EE_REG_B_INT], eeprom_live[EE_REG_B_MAX]);
-      // npxColor = (uint32_t)0x00ff0000;
-      npxColor = strip.Color(eeprom_live[EE_REG_R_INT], 0, 0);
-      // npxEnAry[NUM_NEOPIXELS]
-
-      break;
-
-    case NPX_MD_WHEEL:
-      npxColor = Wheel(0);
-
-    case NPX_MD_RED_SINE:
-      cAll.r = npxR.npcLedSine(eeprom_live[EE_REG_R_INT], eeprom_live[EE_REG_R_MAX]);
-      cAll.g = 0;
-      cAll.b = 0;
-      break;
-
-    case NPX_MD_GREEN_SINE:
-      cAll.r = 0;
-      cAll.g = npxG.npcLedSine(eeprom_live[EE_REG_G_INT], eeprom_live[EE_REG_G_MAX]);
-      cAll.b = 0;
-      break;
-
-    case NPX_MD_BLUE_SINE:
-      cAll.r = 0;
-      cAll.g = 0;
-      cAll.b = npxB.npcLedSine(eeprom_live[EE_REG_B_INT], eeprom_live[EE_REG_B_MAX]);
-      break;
-
-    case NPX_MD_STATIC_RED:
-      cAll.r = eeprom_live[EE_REG_R_MAX];
-      cAll.g = 0;
-      cAll.b = 0;
-
-
-      break;
-
-    case NPX_MD_STATIC_GREEN:
-      cAll.r = 0;
-      cAll.g = eeprom_live[EE_REG_G_MAX];
-      cAll.b = 0;
-      break;
-
-    case NPX_MD_STATIC_BLUE:
-      cAll.r = 0;
-      cAll.g = 0;
-      cAll.b = eeprom_live[EE_REG_B_MAX];
-      break;
-  }
+  if (npxIdx < 0)
+    npxIdx = strip.numPixels() - 1;
 
   strip.clear();
   // rTmpFloat = 10;
   // rTmpFloat *= i/16.0;
   // rTmpFloat *= 2 * PI;
   // rTmpFloat = sin(rTmpFloat);
+
+
 
   nre0.nreBtnOvr(&cAll);
   // nreR.nreBtnOvr(&cAll);
@@ -927,45 +1009,31 @@ void taskNeopixelRing() {
   nreB.nreBtnOvr(&cAll);
   nreRG.nreBtnOvr(&cAll);
 
-  setAllNeoPixels();
-
-
-
+  setAllNeoPixels(npxColor);
   }
 
-
-// OP_MD_BOOT,
-// OP_MD_SETUP,
-// OP_MD_PATTERN_A,
-// OP_MD_PATTERN_B,
-// OP_MD_PATTERN_C,
-// OP_MD_SET_NPX_MODE,
-// OP_MD_SET_R_MAX,
-// OP_MD_SET_G_MAX,
-// OP_MD_SET_B_MAX,
-// NUM_OP_MODES,
 //=================================================================================================
 void taskModeHandler() {
   static bool setting_mode_shadow;
 
-  if(!setting_mode) {
-    if(setting_mode_shadow != setting_mode)
+  if (!setting_mode) {
+    if (setting_mode_shadow != setting_mode)
       opMd = OP_MD_SET_NPX_MODE;
 
 
-    if (opMd >= OP_MD_PATTERN_C)
+    if (opMd > OP_MD_PATTERN_C)
       opMd = OP_MD_PATTERN_A;
 
     if (opMd < OP_MD_PATTERN_A)
-      opMd = OP_MD_PATTERN_C - 1;
+      opMd = OP_MD_PATTERN_C;
 
 
-  }
-  else{
+    }
+  else {
     if (setting_mode_shadow != setting_mode)
       opMd = OP_MD_PATTERN_A;
 
-    if(opMd >= NUM_OP_MODES)
+    if (opMd >= NUM_OP_MODES)
       opMd = OP_MD_SET_NPX_MODE;
 
     if (opMd < OP_MD_SET_NPX_MODE)
@@ -975,10 +1043,10 @@ void taskModeHandler() {
 
 
 
-  }
+    }
 
   setting_mode_shadow = setting_mode;
-}
+  }
 
 //=================================================================================================
 void handleEncoder() {
@@ -990,80 +1058,66 @@ void handleEncoder() {
 
     enc_delta = new_position - enc_position;
     enc_position = new_position;
-  }
+    }
   else
     enc_delta = 0;
 
   switch (opMd) {
-    default:
-    case OP_MD_BOOT:
-    case OP_MD_SETUP:
-      break;
+      default:
+      case OP_MD_BOOT:
+      case OP_MD_SETUP:
+        break;
 
-    case OP_MD_PATTERN_A:
-    case OP_MD_PATTERN_B:
-    case OP_MD_PATTERN_C:
-      if (btnMain && btnMainShadow != btnMain)
-        opMd++;
+      case OP_MD_PATTERN_A:
+      case OP_MD_PATTERN_B:
+      case OP_MD_PATTERN_C:
+        if (btnMain && btnMainShadow != btnMain)
+          opMd++;
 
 
-      if (btnMain) {
-        btn_dwn_tmr++;
-      }
-      else
-        btn_dwn_tmr = 0;
+        if (btnMain) {
+          btn_dwn_tmr++;
+          }
+        else
+          btn_dwn_tmr = 0;
 
-      if (btn_dwn_tmr > 100) {
-        setting_mode = !setting_mode;
-        btnStateR = true;
-      }
-      break;
+        if (btn_dwn_tmr > 100) {
+          setting_mode = !setting_mode;
+          btnStateR = true;
+          }
+        break;
 
-    case OP_MD_SET_NPX_MODE:
-      opMd += enc_delta;
-      break;
+      case OP_MD_SET_NPX_MODE:
+        paramIncHandler(EE_REG_NEOPIXEL_MODE, enc_delta, NUM_EEPROM_REG, 1);
+        if (btnMain && btnMainShadow != btnMain)
+          opMd++;
+        break;
 
-    case OP_MD_SET_R_MAX:
-      paramIncHandler(EE_REG_R_MAX, enc_delta, 255, 1);
-      if(btnMain && btnMainShadow != btnMain)
-        opMd++;
-      break;
+      case OP_MD_SET_R_MAX:
+        paramIncHandler(EE_REG_R_MAX, enc_delta, 255, 1);
+        if (btnMain && btnMainShadow != btnMain)
+          opMd++;
+        break;
 
-    case OP_MD_SET_G_MAX:
-      paramIncHandler(EE_REG_G_MAX, enc_delta, 255, 1);
-      if (btnMain && btnMainShadow != btnMain)
-        opMd++;
-      break;
+      case OP_MD_SET_G_MAX:
+        paramIncHandler(EE_REG_G_MAX, enc_delta, 255, 1);
+        if (btnMain && btnMainShadow != btnMain)
+          opMd++;
+        break;
 
-    case OP_MD_SET_B_MAX:
-      paramIncHandler(EE_REG_B_MAX, enc_delta, 255, 1);
-      if (btnMain && btnMainShadow != btnMain)
-        opMd++;
-      break;
-  }
+      case OP_MD_SET_B_MAX:
+        paramIncHandler(EE_REG_B_MAX, enc_delta, 255, 1);
+        if (btnMain && btnMainShadow != btnMain)
+          opMd++;
+        break;
+    }
 
   btnMainShadow = _ss;
-}
-
-//=================================================================================================
-uint32_t Wheel(byte WheelPos) {
-  WheelPos = 255 - WheelPos;
-  if (WheelPos < 85) {
-    return sspixel.Color(255 - WheelPos * 3, 0, WheelPos * 3);
-    }
-  if (WheelPos < 170) {
-    WheelPos -= 85;
-    return sspixel.Color(0, WheelPos * 3, 255 - WheelPos * 3);
-    }
-  WheelPos -= 170;
-  return sspixel.Color(WheelPos * 3, 255 - WheelPos * 3, 0);
   }
 
 //=================================================================================================
 void loop() {
-  // if(iCount < 5){
-  //   npxlMode = NPX_MD_ASYC_SINE;
-  // }
+
 
   handleEncoder();
 
@@ -1072,7 +1126,7 @@ void loop() {
   taskModeHandler();
 
 
-  if (iCount % NPX_CALL_INTV == 0 && iCount > NPX_CALL_DELAY_CYCLES){
+  if (iCount % NPX_CALL_INTV == 0 && iCount > NPX_CALL_DELAY_CYCLES) {
 
     taskNpxModeHandler();
     taskNeopixelRing();
