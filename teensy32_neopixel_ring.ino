@@ -988,11 +988,7 @@ void taskNeopixelRing() {
   if (amp_sel < 0)
     amp_sel = 255;
 
-  if (npxIdx > strip.numPixels() - 1)
-    npxIdx = 0;
 
-  if (npxIdx < 0)
-    npxIdx = strip.numPixels() - 1;
 
   strip.clear();
   // rTmpFloat = 10;
