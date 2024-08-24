@@ -72,6 +72,7 @@ enum op_modes {
   OP_MD_PATTERN_B,
   OP_MD_PATTERN_C,
   OP_MD_PATTERN_D,
+  OP_MD_PATTERN_E,
   OP_MD_SET_NPX_MODE,
   OP_MD_SET_MAX,
   OP_MD_SET_MIN,
@@ -122,6 +123,7 @@ enum npx_modes {
   NPX_MD_ORANGE_STATIC_SNG,
 
   NPX_MD_RGB_3PX,
+  NPX_MD_AFTERBURNER,
   NUM_NPX_MODES,
   };
 
@@ -146,7 +148,7 @@ String npx_mode_strs[] = {
   "Blu StSng",
   "Org StSng",
   "RGB_3PX",
-
+  "Afterburner",
   };
 
 enum eeprom_registers {
@@ -461,11 +463,11 @@ void setup() {
 
 
   ledPulseTrain(4);
-  nre0 = npx_ring_event(&btnOState, (uint32_t)0);
-  nreR = npx_ring_event(&btnStateR, (uint32_t)0x00FF0000);
-  nreG = npx_ring_event(&btnStateG, (uint32_t)0x0000FF00);
-  nreB = npx_ring_event(&btnStateB, (uint32_t)0x000000FF);
-  nreRG = npx_ring_event(&btnStateRG, (uint32_t)0x00FFFF00);
+  // nre0 = npx_ring_event(&btnOState, (uint32_t)0);
+  // nreR = npx_ring_event(&btnStateR, (uint32_t)0x00FF0000);
+  // nreG = npx_ring_event(&btnStateG, (uint32_t)0x0000FF00);
+  // nreB = npx_ring_event(&btnStateB, (uint32_t)0x000000FF);
+  // nreRG = npx_ring_event(&btnStateRG, (uint32_t)0x00FFFF00);
 
 
   ledPulseTrain(6);
